@@ -2,15 +2,18 @@ require 'crawler_rocks'
 require 'pry'
 require 'json'
 require 'iconv'
-require 'isbn'
+require 'book_toolkit'
 
 require 'thread'
 require 'thwait'
 
-class LiewnBookCrawler
+class LiwenBookCrawler
   include CrawlerRocks::DSL
 
-  def initialize
+  def initialize update_progress: nil, after_each: nil
+    @update_progress_proc = update_progress
+    @after_each_proc = after_each
+
     @query_url = "http://www.liwen.com.tw/product.php"
   end
 
@@ -66,7 +69,7 @@ class LiewnBookCrawler
       author = author_publisher_text.rpartition(' ／ ')[0]
       publisher = author_publisher_text.rpartition(' ／ ')[-1]
 
-      price = book_infos[i].css('.list_price').text.gsub(/[^\d]/, '').to_i
+      original_price = book_infos[i].css('.list_price').text.gsub(/[^\d]/, '').to_i
 
       @books[id] = {
         name: name,
@@ -75,7 +78,8 @@ class LiewnBookCrawler
         url: url,
         id: id,
         external_image_url: external_image_url,
-        price: price
+        original_price: original_price,
+        known_supplier: 'liwen'
       }
       sleep(1) until (
         @threads.delete_if { |t| !t.status };  # remove dead (ended) threads
@@ -92,44 +96,18 @@ class LiewnBookCrawler
 
         # 只需要這兩個
         {"ISBN" => :isbn, "書號" => :internal_code}.each{|k, v| @books[id][v] = attr_hash[k] }
-        @books[id][:isbn] = isbn_to_13(@books[id][:isbn].tr('-', '')) if @books[id][:isbn]
-        print "|"
+        begin
+          @books[id][:isbn] = BookToolkit.to_isbn13(@books[id][:isbn].tr('-', '')) if @books[id][:isbn]
+        rescue Exception => e
+        end
+
+        @after_each_proc.call(book: @books[:id]) if @after_each_proc
+        # print "|"
       end # end new Thread
     end # end each book per page
   end
 
-  def isbn_to_13 isbn
-    case isbn.length
-    when 13
-      return ISBN.thirteen isbn
-    when 10
-      return ISBN.thirteen isbn
-    when 12
-      return "#{isbn}#{isbn_checksum(isbn)}"
-    when 9
-      return ISBN.thirteen("#{isbn}#{isbn_checksum(isbn)}")
-    end
-  end
-
-  def isbn_checksum(isbn)
-    isbn.gsub!(/[^(\d|X)]/, '')
-    c = 0
-    if isbn.length <= 10
-      10.downto(2) {|i| c += isbn[10-i].to_i * i}
-      c %= 11
-      c = 11 - c
-      c ='X' if c == 10
-      return c
-    elsif isbn.length <= 13
-      (1..11).step(2) {|i| c += isbn[i].to_i}
-      c *= 3
-      (0..11).step(2) {|i| c += isbn[i].to_i}
-      c = (220-c) % 10
-      return c
-    end
-  end
-
 end
 
-cc = LiewnBookCrawler.new
-File.write('liwen_books.json', JSON.pretty_generate(cc.books))
+# cc = LiwenBookCrawler.new
+# File.write('liwen_books.json', JSON.pretty_generate(cc.books))
