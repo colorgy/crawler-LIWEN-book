@@ -101,7 +101,7 @@ class LiwenBookCrawler
         rescue Exception => e
         end
 
-        @after_each_proc.call(book: @books[:id]) if @after_each_proc
+        @after_each_proc.call(book: @books[id]) if @after_each_proc
         # print "|"
       end # end new Thread
     end # end each book per page
